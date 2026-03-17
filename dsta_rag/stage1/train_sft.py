@@ -26,6 +26,43 @@ def load_config(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def build_sft_config(cfg: Dict[str, Any], SFTConfig: Any) -> Any:
+    """Build SFTConfig while keeping yaml-driven hyper-parameters extensible."""
+
+    sft_config_kwargs = {
+        "output_dir": cfg["output_dir"],
+        "learning_rate": cfg.get("learning_rate", 2e-5),
+        "num_train_epochs": cfg.get("num_train_epochs", 2),
+        "per_device_train_batch_size": cfg.get("per_device_train_batch_size", 1),
+        "gradient_accumulation_steps": cfg.get("gradient_accumulation_steps", 8),
+        "warmup_ratio": cfg.get("warmup_ratio", 0.03),
+        "logging_steps": cfg.get("logging_steps", 10),
+        "save_steps": cfg.get("save_steps", 200),
+        "bf16": cfg.get("bf16", True),
+        "max_seq_length": cfg.get("max_seq_length", 4096),
+        "chat_template_path": cfg.get("chat_template_path"),
+        "report_to": cfg.get("report_to", []),
+    }
+
+    optional_fields = [
+        "lr_scheduler_type",
+        "weight_decay",
+        "max_grad_norm",
+        "max_steps",
+        "seed",
+        "save_total_limit",
+        "save_strategy",
+        "gradient_checkpointing",
+        "group_by_length",
+        "packing",
+    ]
+    for field in optional_fields:
+        if field in cfg and cfg[field] is not None:
+            sft_config_kwargs[field] = cfg[field]
+
+    return SFTConfig(**sft_config_kwargs)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Stage-1 DSTA SFT model with HF/TRL.")
     parser.add_argument("--config", required=True)
@@ -64,20 +101,7 @@ def main() -> None:
             task_type="CAUSAL_LM",
         )
 
-    sft_args = SFTConfig(
-        output_dir=cfg["output_dir"],
-        learning_rate=cfg.get("learning_rate", 2e-5),
-        num_train_epochs=cfg.get("num_train_epochs", 2),
-        per_device_train_batch_size=cfg.get("per_device_train_batch_size", 1),
-        gradient_accumulation_steps=cfg.get("gradient_accumulation_steps", 8),
-        warmup_ratio=cfg.get("warmup_ratio", 0.03),
-        logging_steps=cfg.get("logging_steps", 10),
-        save_steps=cfg.get("save_steps", 200),
-        bf16=cfg.get("bf16", True),
-        max_seq_length=cfg.get("max_seq_length", 4096),
-        chat_template_path=cfg.get("chat_template_path"),
-        report_to=[],
-    )
+    sft_args = build_sft_config(cfg, SFTConfig)
 
     trainer = SFTTrainer(
         model=model,
