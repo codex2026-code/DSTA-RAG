@@ -38,6 +38,11 @@ bash cmd/train_sft.sh \
   --train-file artifacts/stage1/sft.jsonl
 ```
 
+
+> 对全量 HotpotQA train split 做 SFT 时，建议优先采用 `max_steps` 限制训练步数（而不是拉长 epoch），
+> 以降低过拟合风险并稳定协议学习。仓库默认 `configs/stage1/qwen25_3b_lora.yaml` 已采用该策略，
+> 无需重新处理数据即可直接调参训练。
+
 ### 3) Stage 2：构造 parquet + 启动 veRL 训练
 
 ```bash
