@@ -17,16 +17,20 @@ from dsta_rag.utils import dump_json, read_jsonl, token_f1, write_jsonl
 def _lazy_imports():
     try:
         from peft import PeftModel
+        import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError as exc:
         raise SystemExit(
             "Stage 1 evaluation requires optional dependencies. Install with: pip install -e .[stage1]"
         ) from exc
-    return PeftModel, AutoModelForCausalLM, AutoTokenizer
+    return PeftModel, AutoModelForCausalLM, AutoTokenizer, torch
 
 
 def _load_model(model_path: str, base_model: Optional[str]):
-    PeftModel, AutoModelForCausalLM, AutoTokenizer = _lazy_imports()
+    PeftModel, AutoModelForCausalLM, AutoTokenizer, torch = _lazy_imports()
+    model_kwargs = {"trust_remote_code": True, "torch_dtype": "auto"}
+    if torch.cuda.is_available():
+        model_kwargs["device_map"] = "auto"
 
     model_dir = Path(model_path)
     adapter_config_path = model_dir / "adapter_config.json"
@@ -40,14 +44,16 @@ def _load_model(model_path: str, base_model: Optional[str]):
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(base_name, trust_remote_code=True, torch_dtype="auto")
+        model = AutoModelForCausalLM.from_pretrained(base_name, **model_kwargs)
         model = PeftModel.from_pretrained(model, model_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype="auto")
+        model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
 
+    if not torch.cuda.is_available():
+        model = model.to("cpu")
     model.eval()
     return tokenizer, model
 
@@ -85,6 +91,7 @@ def _normalize_example(row: Dict[str, Any]) -> Dict[str, str]:
 
 
 def main() -> None:
+    _, _, _, torch = _lazy_imports()
     parser = argparse.ArgumentParser(description="Evaluate Stage-1 checkpoint instruction-following behavior.")
     parser.add_argument("--model-path", required=True, help="Model checkpoint path (full model or LoRA adapter dir).")
     parser.add_argument("--base-model", default=None, help="Required only when --model-path is LoRA adapter without base info.")
@@ -109,53 +116,58 @@ def main() -> None:
     if not rows:
         raise SystemExit("No rows found for Stage-1 evaluation.")
 
+    console = Console()
+    console.print(f"Loaded model from [bold]{args.model_path}[/bold]. Evaluating [bold]{len(rows)}[/bold] examples...")
+
     results: List[Dict[str, Any]] = []
-    for row in rows:
-        prompt_text = _build_prompt(tokenizer, row["question"], args.system_prompt)
-        model_inputs = tokenizer(prompt_text, return_tensors="pt").to(model.device)
+    with console.status("Running generation..."):
+        for row in rows:
+            prompt_text = _build_prompt(tokenizer, row["question"], args.system_prompt)
+            model_inputs = tokenizer(prompt_text, return_tensors="pt").to(model.device)
 
-        generate_kwargs = {
-            "max_new_tokens": args.max_new_tokens,
-            "pad_token_id": tokenizer.pad_token_id,
-            "eos_token_id": tokenizer.eos_token_id,
-        }
-        if args.temperature <= 0:
-            generate_kwargs["do_sample"] = False
-        else:
-            generate_kwargs.update({"do_sample": True, "temperature": args.temperature, "top_p": args.top_p})
-
-        output = model.generate(**model_inputs, **generate_kwargs)
-        generated_ids = output[0][model_inputs["input_ids"].shape[1] :]
-        response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-
-        parsed = parse_protocol(response)
-        errors = validate_protocol(parsed)
-        pred_answer = parsed.get("answer") or ""
-        has_answer = bool(pred_answer)
-        has_search = bool(parsed.get("query"))
-
-        metrics = {
-            "valid": int(len(errors) == 0),
-            "has_assess": int(parsed.get("assess_label") is not None),
-            "has_refine": int(len(parsed.get("refine_items") or []) > 0),
-            "has_rectify": int(bool(parsed.get("next_search_target") or parsed.get("missing_slots") or parsed.get("why_insufficient"))),
-            "has_think": int(bool(parsed.get("think"))),
-            "has_terminal_action": int(has_answer or has_search),
-            "answer_em": int(has_answer and pred_answer.strip().lower() == row["answer"].strip().lower()),
-            "answer_f1": token_f1(pred_answer, row["answer"]) if has_answer else 0.0,
-        }
-
-        results.append(
-            {
-                "qid": row["qid"],
-                "question": row["question"],
-                "gold_answer": row["answer"],
-                "response": response,
-                "parsed": parsed,
-                "errors": errors,
-                "metrics": metrics,
+            generate_kwargs = {
+                "max_new_tokens": args.max_new_tokens,
+                "pad_token_id": tokenizer.pad_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
             }
-        )
+            if args.temperature <= 0:
+                generate_kwargs["do_sample"] = False
+            else:
+                generate_kwargs.update({"do_sample": True, "temperature": args.temperature, "top_p": args.top_p})
+
+            with torch.inference_mode():
+                output = model.generate(**model_inputs, **generate_kwargs)
+            generated_ids = output[0][model_inputs["input_ids"].shape[1] :]
+            response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+
+            parsed = parse_protocol(response)
+            errors = validate_protocol(parsed)
+            pred_answer = parsed.get("answer") or ""
+            has_answer = bool(pred_answer)
+            has_search = bool(parsed.get("query"))
+
+            metrics = {
+                "valid": int(len(errors) == 0),
+                "has_assess": int(parsed.get("assess_label") is not None),
+                "has_refine": int(len(parsed.get("refine_items") or []) > 0),
+                "has_rectify": int(bool(parsed.get("next_search_target") or parsed.get("missing_slots") or parsed.get("why_insufficient"))),
+                "has_think": int(bool(parsed.get("think"))),
+                "has_terminal_action": int(has_answer or has_search),
+                "answer_em": int(has_answer and pred_answer.strip().lower() == row["answer"].strip().lower()),
+                "answer_f1": token_f1(pred_answer, row["answer"]) if has_answer else 0.0,
+            }
+
+            results.append(
+                {
+                    "qid": row["qid"],
+                    "question": row["question"],
+                    "gold_answer": row["answer"],
+                    "response": response,
+                    "parsed": parsed,
+                    "errors": errors,
+                    "metrics": metrics,
+                }
+            )
 
     summary = {
         "count": len(results),
@@ -177,7 +189,7 @@ def main() -> None:
             table.add_row(key, str(value))
         else:
             table.add_row(key, f"{value:.4f}")
-    Console().print(table)
+    console.print(table)
 
     if args.output:
         write_jsonl(results, args.output)
