@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsta-rag"
+version = "0.1.0"
+description = "Dual-State Trajectory-Aligned RAG workspace for Codex"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "OpenAI Codex Workspace"}]
+dependencies = [
+  "pyyaml>=6.0",
+  "pandas>=2.0",
+  "pyarrow>=14.0",
+  "jsonschema>=4.20",
+  "orjson>=3.10",
+  "rich>=13.7",
+  "tqdm>=4.66"
+]
+
+[project.optional-dependencies]
+stage1 = [
+  "datasets>=2.18",
+  "transformers>=4.44",
+  "trl>=0.13",
+  "peft>=0.13",
+  "accelerate>=0.34"
+]
+stage2 = [
+  "omegaconf>=2.3"
+]
+dev = [
+  "pytest>=8.0"
+]
+
+[project.scripts]
+dsta-build-stage1-traces = "dsta_rag.stage1.build_traces:main"
+dsta-build-stage1-sft = "dsta_rag.stage1.build_sft:main"
+dsta-train-sft = "dsta_rag.stage1.train_sft:main"
+dsta-build-stage2-parquet = "dsta_rag.stage2.build_rl_dataset:main"
+dsta-launch-rl = "dsta_rag.stage2.launcher:main"
+dsta-eval-rollouts = "dsta_rag.stage2.replay_eval:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dsta_rag*"]

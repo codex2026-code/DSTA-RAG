@@ -1,0 +1,33 @@
+base_model: Qwen/Qwen2.5-3B-Base
+experiment_name: dsta-rag-qwen25-3b-grpo
+project_name: DSTA-RAG
+max_turns: 5
+retriever:
+  url: http://127.0.0.1:8000/retrieve
+  topk: 3
+verl:
+  trainer_module: verl.trainer.main_ppo
+  adv_estimator: grpo
+  train_batch_size: 256
+  val_batch_size: 128
+  max_prompt_length: 6656
+  max_response_length: 512
+  max_start_length: 2048
+  max_obs_length: 1024
+  total_epochs: 3
+  default_local_dir: verl_checkpoints/dsta-rag-qwen25-3b-grpo
+  actor_lr: 1.0e-6
+  critic_lr: 1.0e-5
+  ppo_mini_batch_size: 256
+  ppo_micro_batch_size: 64
+  rollout_name: vllm
+  rollout_gpu_memory_utilization: 0.6
+reward:
+  answer_weight: 1.0
+  coverage_weight: 0.25
+  faithfulness_weight: 0.25
+  stop_weight: 0.15
+  cost_weight: 0.02
+  exact_match_only: false
+  overconfident_stop_penalty: 1.0
+  underconfident_continue_penalty: 0.25
