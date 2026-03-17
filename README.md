@@ -16,6 +16,15 @@
 pip install -e .
 ```
 
+### 1.5) 从 Hugging Face 下载 HotpotQA(train) 并转换
+
+```bash
+bash cmd/prepare_hotpot_from_hf.sh \
+  --split train \
+  --raw-output examples/raw_hotpot_like.jsonl \
+  --trace-output artifacts/stage1/traces.jsonl
+```
+
 ### 2) Stage 1：构造 traces + SFT 数据 + 训练
 
 ```bash
