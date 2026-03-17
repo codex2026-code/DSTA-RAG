@@ -43,6 +43,20 @@ bash cmd/train_sft.sh \
 > 以降低过拟合风险并稳定协议学习。仓库默认 `configs/stage1/qwen25_3b_lora.yaml` 已采用该策略，
 > 无需重新处理数据即可直接调参训练。
 
+
+### 2.5) Stage 1 ckpt 指令遵循评测（协议合法性 + 动作完整性）
+
+```bash
+bash cmd/eval_stage1.sh \
+  --model-path checkpoints/stage1/qwen25_3b_lora/checkpoint-3000 \
+  --input examples/raw_hotpot_like.jsonl \
+  --limit 100 \
+  --output artifacts/stage1/eval_outputs.jsonl \
+  --summary artifacts/stage1/eval_summary.json
+```
+
+评测会统计：`valid_rate`、`assess/refine/rectify/think` 出现率、终止动作完整率，以及 `<answer>` 的 EM/F1。
+
 ### 3) Stage 2：构造 parquet + 启动 veRL 训练
 
 ```bash
