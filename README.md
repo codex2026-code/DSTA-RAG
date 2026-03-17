@@ -38,6 +38,8 @@ bash cmd/train_sft.sh \
   --train-file artifacts/stage1/sft.jsonl
 ```
 
+> 若 7B 训练在 tokenizer 初始化时报错（提示需要 `sentencepiece` 或 `tiktoken`），可直接使用 `configs/stage1/qwen25_7b_lora.yaml` 中的 `tokenizer_use_fast: false`，或安装依赖：`pip install sentencepiece tiktoken`。
+
 
 > 对全量 HotpotQA train split 做 SFT 时，建议优先采用 `max_steps` 限制训练步数（而不是拉长 epoch），
 > 以降低过拟合风险并稳定协议学习。仓库默认 `configs/stage1/qwen25_3b_lora.yaml` 已采用该策略，
