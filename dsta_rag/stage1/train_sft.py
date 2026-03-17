@@ -121,14 +121,23 @@ def main() -> None:
 
     sft_args = build_sft_config(cfg, SFTConfig)
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=sft_args,
-        train_dataset=dataset["train"],
-        eval_dataset=dataset.get("validation"),
-        peft_config=peft_config,
-    )
+    trainer_signature = inspect.signature(SFTTrainer.__init__)
+    trainer_fields = set(trainer_signature.parameters)
+
+    trainer_kwargs = {
+        "model": model,
+        "args": sft_args,
+        "train_dataset": dataset["train"],
+        "eval_dataset": dataset.get("validation"),
+        "peft_config": peft_config,
+    }
+
+    if "tokenizer" in trainer_fields:
+        trainer_kwargs["tokenizer"] = tokenizer
+    elif "processing_class" in trainer_fields:
+        trainer_kwargs["processing_class"] = tokenizer
+
+    trainer = SFTTrainer(**trainer_kwargs)
     trainer.train()
     trainer.save_model(cfg["output_dir"])
     tokenizer.save_pretrained(cfg["output_dir"])
