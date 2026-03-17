@@ -38,6 +38,7 @@ dev = [
 dsta-build-stage1-traces = "dsta_rag.stage1.build_traces:main"
 dsta-build-stage1-sft = "dsta_rag.stage1.build_sft:main"
 dsta-train-sft = "dsta_rag.stage1.train_sft:main"
+dsta-eval-stage1 = "dsta_rag.stage1.eval_sft:main"
 dsta-build-stage2-parquet = "dsta_rag.stage2.build_rl_dataset:main"
 dsta-launch-rl = "dsta_rag.stage2.launcher:main"
 dsta-eval-rollouts = "dsta_rag.stage2.replay_eval:main"
