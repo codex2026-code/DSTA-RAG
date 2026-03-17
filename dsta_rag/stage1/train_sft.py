@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -29,6 +30,18 @@ def load_config(path: str) -> Dict[str, Any]:
 def build_sft_config(cfg: Dict[str, Any], SFTConfig: Any) -> Any:
     """Build SFTConfig while keeping yaml-driven hyper-parameters extensible."""
 
+    sft_signature = inspect.signature(SFTConfig)
+    sft_fields = set(sft_signature.parameters)
+
+    if "max_length" in sft_fields:
+        max_length_field = "max_length"
+    elif "max_seq_length" in sft_fields:
+        max_length_field = "max_seq_length"
+    else:
+        raise ValueError(
+            "Unsupported trl.SFTConfig: neither `max_length` nor `max_seq_length` is available."
+        )
+
     sft_config_kwargs = {
         "output_dir": cfg["output_dir"],
         "learning_rate": cfg.get("learning_rate", 2e-5),
@@ -39,10 +52,12 @@ def build_sft_config(cfg: Dict[str, Any], SFTConfig: Any) -> Any:
         "logging_steps": cfg.get("logging_steps", 10),
         "save_steps": cfg.get("save_steps", 200),
         "bf16": cfg.get("bf16", True),
-        "max_seq_length": cfg.get("max_seq_length", 4096),
         "chat_template_path": cfg.get("chat_template_path"),
         "report_to": cfg.get("report_to", []),
     }
+
+    max_length = cfg.get("max_length", cfg.get("max_seq_length", 4096))
+    sft_config_kwargs[max_length_field] = max_length
 
     optional_fields = [
         "lr_scheduler_type",
@@ -60,7 +75,10 @@ def build_sft_config(cfg: Dict[str, Any], SFTConfig: Any) -> Any:
         if field in cfg and cfg[field] is not None:
             sft_config_kwargs[field] = cfg[field]
 
-    return SFTConfig(**sft_config_kwargs)
+    filtered_kwargs = {
+        key: value for key, value in sft_config_kwargs.items() if key in sft_fields and value is not None
+    }
+    return SFTConfig(**filtered_kwargs)
 
 
 def main() -> None:

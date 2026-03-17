@@ -1,7 +1,7 @@
 model_name_or_path: Qwen/Qwen2.5-3B-Base
 output_dir: checkpoints/stage1/qwen25_3b_lora
 train_file: artifacts/stage1/sft.jsonl
-max_seq_length: 3072
+max_length: 3072
 learning_rate: 1.0e-5
 lr_scheduler_type: cosine
 num_train_epochs: 1
