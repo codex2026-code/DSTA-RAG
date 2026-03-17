@@ -98,7 +98,27 @@ def main() -> None:
         data_files["validation"] = eval_file
     dataset = load_dataset("json", data_files=data_files)
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg["model_name_or_path"], trust_remote_code=True)
+    tokenizer_use_fast = cfg.get("tokenizer_use_fast", True)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            cfg["model_name_or_path"],
+            trust_remote_code=True,
+            use_fast=tokenizer_use_fast,
+        )
+    except ValueError as exc:
+        if tokenizer_use_fast:
+            print(
+                "[warn] Fast tokenizer initialization failed. Falling back to slow tokenizer "
+                "(use_fast=False). If this is unintended, install optional deps: "
+                "`pip install sentencepiece tiktoken`."
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                cfg["model_name_or_path"],
+                trust_remote_code=True,
+                use_fast=False,
+            )
+        else:
+            raise
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 

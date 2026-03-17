@@ -1,4 +1,5 @@
 model_name_or_path: Qwen/Qwen2.5-7B-Base
+tokenizer_use_fast: false
 output_dir: checkpoints/stage1/qwen25_7b_lora
 train_file: artifacts/stage1/sft.jsonl
 max_length: 3072
