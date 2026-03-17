@@ -1,0 +1,29 @@
+model_name_or_path: Qwen/Qwen2.5-7B-Base
+output_dir: checkpoints/stage1/qwen25_7b_lora
+train_file: artifacts/stage1/sft.jsonl
+max_length: 3072
+learning_rate: 8.0e-6
+lr_scheduler_type: cosine
+num_train_epochs: 1
+max_steps: 3000
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 32
+warmup_ratio: 0.05
+weight_decay: 0.1
+max_grad_norm: 0.3
+logging_steps: 10
+save_steps: 250
+save_total_limit: 3
+save_strategy: steps
+gradient_checkpointing: true
+group_by_length: true
+bf16: true
+seed: 42
+use_lora: true
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+chat_template_path: null
+report_to: []
