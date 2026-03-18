@@ -11,6 +11,29 @@ from dsta_rag.prompts import STAGE2_SYSTEM_PROMPT
 from dsta_rag.utils import read_jsonl
 
 
+def normalize_supporting_facts(supporting_facts: Any) -> List[Dict[str, Any]]:
+    """Normalize supporting facts into a parquet-friendly list[struct] shape."""
+    normalized: List[Dict[str, Any]] = []
+    for item in supporting_facts or []:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            normalized.append(
+                {
+                    "title": str(item[0]),
+                    "sent_id": int(item[1]) if isinstance(item[1], (int, float)) else item[1],
+                }
+            )
+        elif isinstance(item, dict):
+            normalized.append(
+                {
+                    "title": str(item.get("title", "")),
+                    "sent_id": item.get("sent_id"),
+                }
+            )
+        else:
+            normalized.append({"title": str(item), "sent_id": None})
+    return normalized
+
+
 def build_row(example: Dict[str, Any], dataset: str) -> Dict[str, Any]:
     norm = normalize_example(example, dataset=dataset)
     oracle_slots = [hop.slot for hop in norm.oracle_hops]
@@ -19,7 +42,7 @@ def build_row(example: Dict[str, Any], dataset: str) -> Dict[str, Any]:
         "ground_truth": norm.answer,
         "oracle_slots": oracle_slots,
         "oracle_hops": [hop.__dict__ for hop in norm.oracle_hops],
-        "supporting_facts": example.get("supporting_facts") or [],
+        "supporting_facts": normalize_supporting_facts(example.get("supporting_facts")),
         "exact_match_only": False,
     }
     return {
