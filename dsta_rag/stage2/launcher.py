@@ -16,6 +16,49 @@ def load_config(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def sanitize_tokenizer_config(model_path: str) -> None:
+    """
+    Fix known tokenizer_config compatibility issues for local checkpoints.
+
+    Some checkpoints are saved with `extra_special_tokens` as a JSON list, while
+    recent `transformers` expects a dict-like mapping and calls `.keys()` on it.
+    """
+    path = Path(model_path)
+    if not path.exists() or not path.is_dir():
+        return
+
+    tokenizer_cfg = path / "tokenizer_config.json"
+    if not tokenizer_cfg.exists():
+        return
+
+    with open(tokenizer_cfg, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    extra_special_tokens = cfg.get("extra_special_tokens")
+    if not isinstance(extra_special_tokens, list):
+        return
+
+    fixed = {}
+    for idx, token in enumerate(extra_special_tokens):
+        if isinstance(token, str) and token:
+            fixed[f"extra_token_{idx}"] = token
+
+    if fixed and "additional_special_tokens" not in cfg:
+        cfg["additional_special_tokens"] = list(fixed.values())
+    cfg["extra_special_tokens"] = fixed
+
+    backup = tokenizer_cfg.with_suffix(".json.bak")
+    if not backup.exists():
+        tokenizer_cfg.replace(backup)
+    with open(tokenizer_cfg, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print(
+        "[DSTA-RAG] Patched tokenizer_config.json: "
+        "`extra_special_tokens` list -> dict for transformers compatibility."
+    )
+
+
 def build_overrides(cfg: Dict[str, Any], train_file: str, val_file: str, reward_path: str) -> List[str]:
     verl_cfg = cfg["verl"]
     reward_cfg = cfg["reward"]
@@ -68,6 +111,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    sanitize_tokenizer_config(cfg["base_model"])
     reward_path = str((Path(__file__).resolve().parent / "reward_fn.py").resolve())
     overrides = build_overrides(cfg, args.train_file, args.val_file, reward_path)
 
