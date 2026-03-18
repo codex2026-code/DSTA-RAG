@@ -101,12 +101,44 @@ def build_overrides(cfg: Dict[str, Any], train_file: str, val_file: str, reward_
     return overrides
 
 
+def resolve_autorefine_entrypoint(
+    cfg: Dict[str, Any], autorefine_root: str, run_mode: str, autorefine_cmd: str | None
+) -> Path | None:
+    if autorefine_cmd:
+        entrypoint = Path(autorefine_cmd)
+    else:
+        cfg_cmd = (cfg.get("autorefine", {}).get("commands", {}) or {}).get(run_mode)
+        if cfg_cmd:
+            entrypoint = Path(str(cfg_cmd))
+        else:
+            entrypoint = Path("cmd") / f"{run_mode}.sh"
+
+    if not entrypoint.is_absolute():
+        entrypoint = Path(autorefine_root) / entrypoint
+
+    return entrypoint if entrypoint.exists() else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Launch DSTA Stage-2 training on top of veRL / AutoRefine.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--train-file", required=True)
     parser.add_argument("--val-file", required=True)
     parser.add_argument("--autorefine-root", required=True, help="Root directory of the AutoRefine/Search-R1 style workspace.")
+    parser.add_argument("--run-mode", choices=["train", "eval"], default="train", help="Whether to run AutoRefine training or evaluation entrypoint.")
+    parser.add_argument(
+        "--autorefine-cmd",
+        default=None,
+        help=(
+            "AutoRefine entrypoint script path. Supports absolute path or path relative to --autorefine-root. "
+            "When omitted, uses config autorefine.commands.<run-mode> or defaults to cmd/<run-mode>.sh."
+        ),
+    )
+    parser.add_argument(
+        "--no-inject-overrides",
+        action="store_true",
+        help="Disable hydra-style override injection. Useful when the target script manages arguments itself.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -115,7 +147,20 @@ def main() -> None:
     reward_path = str((Path(__file__).resolve().parent / "reward_fn.py").resolve())
     overrides = build_overrides(cfg, args.train_file, args.val_file, reward_path)
 
-    cmd = ["python", "-m", cfg["verl"]["trainer_module"]] + overrides
+    entrypoint = resolve_autorefine_entrypoint(cfg, args.autorefine_root, args.run_mode, args.autorefine_cmd)
+    if entrypoint is not None:
+        cmd = ["bash", str(entrypoint)]
+    else:
+        if args.run_mode != "train":
+            raise FileNotFoundError(
+                f"Cannot find AutoRefine entrypoint for mode={args.run_mode}. "
+                "Please provide --autorefine-cmd or set autorefine.commands in config."
+            )
+        cmd = ["python", "-m", cfg["verl"]["trainer_module"]]
+
+    if not args.no_inject_overrides:
+        cmd += overrides
+
     env = os.environ.copy()
     workspace_root = str(Path(__file__).resolve().parents[2])
     env["PYTHONPATH"] = workspace_root + os.pathsep + env.get("PYTHONPATH", "")

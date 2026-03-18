@@ -2,6 +2,10 @@ base_model: Qwen/Qwen2.5-3B-Base
 experiment_name: dsta-rag-qwen25-3b-grpo
 project_name: DSTA-RAG
 max_turns: 5
+autorefine:
+  commands:
+    train: cmd/train.sh
+    eval: cmd/eval.sh
 retriever:
   url: http://127.0.0.1:8000/retrieve
   topk: 3
