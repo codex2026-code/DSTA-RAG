@@ -59,6 +59,37 @@ def sanitize_tokenizer_config(model_path: str) -> None:
     )
 
 
+def validate_model_config(model_path: str) -> None:
+    """
+    Validate local model checkpoint config before launching AutoRefine/veRL.
+
+    veRL stage-2 expects a decoder-only causal LM checkpoint path in
+    `actor_rollout_ref.model.path`. If users accidentally point to a checkpoint
+    directory with `model_type=rag`, transformers will instantiate `RagConfig`
+    and fail later with a cryptic error about missing `question_encoder` and
+    `generator`.
+    """
+    path = Path(model_path)
+    if not path.exists() or not path.is_dir():
+        return
+
+    config_path = path / "config.json"
+    if not config_path.exists():
+        return
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    model_type = str(cfg.get("model_type", "")).strip().lower()
+    if model_type == "rag":
+        raise ValueError(
+            "[DSTA-RAG] Invalid base_model checkpoint: config.json has model_type='rag'. "
+            "Stage-2 RL requires a decoder-only causal LM checkpoint "
+            "(e.g. Qwen/Llama/Mistral) or a merged SFT checkpoint. "
+            f"Please update `base_model` in your stage2 config. Got: {model_path}"
+        )
+
+
 def build_overrides(cfg: Dict[str, Any], train_file: str, val_file: str, reward_path: str) -> List[str]:
     verl_cfg = cfg["verl"]
     reward_cfg = cfg["reward"]
@@ -144,6 +175,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     sanitize_tokenizer_config(cfg["base_model"])
+    validate_model_config(cfg["base_model"])
     reward_path = str((Path(__file__).resolve().parent / "reward_fn.py").resolve())
     overrides = build_overrides(cfg, args.train_file, args.val_file, reward_path)
 
