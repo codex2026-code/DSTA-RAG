@@ -71,10 +71,28 @@ bash cmd/train_rl.sh \
   --train-file artifacts/stage2/train.parquet \
   --val-file artifacts/stage2/val.parquet \
   --autorefine-root /path/to/AutoRefine
+
+# 显式指定使用 AutoRefine/cmd/train.sh
+bash cmd/train_rl.sh \
+  --config configs/stage2/qwen25_3b_grpo.yaml \
+  --train-file artifacts/stage2/train.parquet \
+  --val-file artifacts/stage2/val.parquet \
+  --autorefine-root /path/to/AutoRefine \
+  --run-mode train
+
+# 切换到 AutoRefine/cmd/eval.sh（默认也会注入同一套 overrides）
+bash cmd/train_rl.sh \
+  --config configs/stage2/qwen25_3b_grpo.yaml \
+  --train-file artifacts/stage2/train.parquet \
+  --val-file artifacts/stage2/val.parquet \
+  --autorefine-root /path/to/AutoRefine \
+  --run-mode eval
 ```
 
 > Stage 2 默认假设你已经有一个可运行的 AutoRefine / Search-R1 / veRL 工作目录；
-> 本仓库通过 `custom_reward_function.path` 把 DSTA 奖励函数注入 veRL。
+> 本仓库通过 hydra overrides（含 `custom_reward_function.path`）把 DSTA 奖励函数注入 veRL。
+> `dsta_rag.stage2.launcher` 会优先调用 `autorefine.commands.<run-mode>`（或默认 `cmd/<run-mode>.sh`），
+> 找不到脚本时 `train` 模式会回退到 `python -m <verl.trainer_module>`。
 
 #### 3.1) 使用 W&B offline 监控 reward 组成项趋势
 
