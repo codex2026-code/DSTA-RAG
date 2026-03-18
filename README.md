@@ -76,6 +76,32 @@ bash cmd/train_rl.sh \
 > Stage 2 默认假设你已经有一个可运行的 AutoRefine / Search-R1 / veRL 工作目录；
 > 本仓库通过 `custom_reward_function.path` 把 DSTA 奖励函数注入 veRL。
 
+#### 3.1) 使用 W&B offline 监控 reward 组成项趋势
+
+`dsta_rag.stage2.reward_fn.compute_score` 在保持返回总奖励 (`total`) 不变的同时，
+支持按环境变量开关把 reward 各组成项写入 W&B（offline 模式可用）。
+
+```bash
+export WANDB_MODE=offline
+export WANDB_DIR=artifacts/wandb_offline
+export WANDB_PROJECT=DSTA-RAG
+export WANDB_NAME=dsta-stage2-debug
+export DSTA_WANDB_REWARD_LOG=1
+```
+
+然后按正常 Stage 2 命令启动训练。开启后会记录如下曲线：
+
+- `reward/answer`
+- `reward/coverage`
+- `reward/ts`, `reward/it`, `reward/ta`
+- `reward/faithfulness`
+- `reward/stop`
+- `reward/cost_penalty`
+- `reward/validation_penalty`
+- `reward/total`
+
+默认仅 rank0 进程打点，避免分布式重复写日志。
+
 ## 目录
 
 ```text

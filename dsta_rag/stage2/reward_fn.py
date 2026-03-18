@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -7,6 +8,11 @@ from typing import Any, Dict, List
 
 from dsta_rag.protocol import parse_turns, validate_protocol
 from dsta_rag.utils import normalize_text, token_f1
+
+_WANDB_SPEC = importlib.util.find_spec("wandb")
+_WANDB_AVAILABLE = _WANDB_SPEC is not None
+_WANDB_RUN = None
+_WANDB_STEP = 0
 
 
 def _final_answer(solution_str: str) -> str:
@@ -165,7 +171,74 @@ def compute_components(solution_str: str, ground_truth: str, extra_info: Dict[st
     }
 
 
+def _should_log_reward_components() -> bool:
+    return os.environ.get("DSTA_WANDB_REWARD_LOG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_logging_rank() -> bool:
+    rank = os.environ.get("RANK")
+    if rank is not None:
+        return rank == "0"
+    local_rank = os.environ.get("LOCAL_RANK")
+    if local_rank is not None:
+        return local_rank == "0"
+    return True
+
+
+def _wandb_step(extra_info: Dict[str, Any]) -> int:
+    global _WANDB_STEP
+    for key in ("global_step", "step", "trainer_step"):
+        value = extra_info.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    _WANDB_STEP += 1
+    return _WANDB_STEP
+
+
+def _ensure_wandb_run():
+    global _WANDB_RUN
+    if _WANDB_RUN is not None:
+        return _WANDB_RUN
+    if not _WANDB_AVAILABLE:
+        return None
+    import wandb
+
+    _WANDB_RUN = wandb.run
+    if _WANDB_RUN is None:
+        _WANDB_RUN = wandb.init(
+            mode=os.environ.get("WANDB_MODE", "offline"),
+            project=os.environ.get("WANDB_PROJECT", "DSTA-RAG"),
+            name=os.environ.get("WANDB_NAME", None),
+            dir=os.environ.get("WANDB_DIR", None),
+            reinit=False,
+        )
+    return _WANDB_RUN
+
+
+def _log_components_to_wandb(components: Dict[str, float], extra_info: Dict[str, Any]) -> None:
+    if not _should_log_reward_components():
+        return
+    if not _is_logging_rank():
+        return
+    run = _ensure_wandb_run()
+    if run is None:
+        return
+
+    import wandb
+
+    step = _wandb_step(extra_info)
+    payload = {f"reward/{k}": float(v) for k, v in components.items()}
+    payload["reward/turns"] = float(len(parse_turns(extra_info.get("solution_str", "") or ""))) if extra_info.get("solution_str") else 0.0
+    wandb.log(payload, step=step)
+
+
 def compute_score(data_source: str, solution_str: str, ground_truth: Any, extra_info: Dict[str, Any] | None = None) -> float:
     gold = ground_truth if isinstance(ground_truth, str) else str(ground_truth)
+    extra_info = extra_info or {}
     components = compute_components(solution_str, gold, extra_info=extra_info)
+    log_info = dict(extra_info)
+    log_info["solution_str"] = solution_str
+    _log_components_to_wandb(components, log_info)
     return float(components["total"])
