@@ -11,15 +11,49 @@ from dsta_rag.prompts import STAGE2_SYSTEM_PROMPT
 from dsta_rag.utils import read_jsonl
 
 
+def _normalize_supporting_facts(raw_supporting_facts: Any) -> List[Dict[str, Any]]:
+    """Normalize supporting facts into Arrow-friendly list[struct] shape.
+
+    Hotpot-like sources often represent supporting facts as `[title, sent_id]`.
+    This tuple/list style mixes string and integer inside one nested list item,
+    which can trigger pyarrow conversion failures when writing parquet.
+    """
+    normalized: List[Dict[str, Any]] = []
+    if not isinstance(raw_supporting_facts, list):
+        return normalized
+
+    for item in raw_supporting_facts:
+        if isinstance(item, (list, tuple)):
+            title = item[0] if len(item) > 0 else ""
+            sent_id = item[1] if len(item) > 1 else -1
+            normalized.append({"title": str(title), "sent_id": int(sent_id)})
+            continue
+
+        if isinstance(item, dict):
+            title = item.get("title") or item.get("doc_title") or item.get("page") or ""
+            sent_id = item.get("sent_id")
+            if sent_id is None:
+                sent_id = item.get("sentence_id")
+            if sent_id is None:
+                sent_id = item.get("index")
+            normalized.append({"title": str(title), "sent_id": int(sent_id) if sent_id is not None else -1})
+            continue
+
+        normalized.append({"title": str(item), "sent_id": -1})
+
+    return normalized
+
+
 def build_row(example: Dict[str, Any], dataset: str) -> Dict[str, Any]:
     norm = normalize_example(example, dataset=dataset)
     oracle_slots = [hop.slot for hop in norm.oracle_hops]
+    supporting_facts = _normalize_supporting_facts(example.get("supporting_facts"))
     reward_meta = {
         "style": "dsta_rule",
         "ground_truth": norm.answer,
         "oracle_slots": oracle_slots,
         "oracle_hops": [hop.__dict__ for hop in norm.oracle_hops],
-        "supporting_facts": example.get("supporting_facts") or [],
+        "supporting_facts": supporting_facts,
         "exact_match_only": False,
     }
     return {
